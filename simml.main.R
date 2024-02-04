@@ -12,30 +12,34 @@
 #' for a new patient with pretreatment clinical information.
 #'
 #' @param y  a n-by-1 vector of treatment outcomes; y is a member of the exponential family; any distribution supported by \code{mgcv::gam}; y can also be an ordinal categorial response with \code{R} categories taking a value from 1 to \code{R}.
-#' @param A  a n-by-1 vector of treatment variable; each element is assumed to take a value on a continuum.
+#' @param A  a n-by-1 vector of treatment variable; each element is assumed to take a value in a finite discrete space.
 #' @param X  a n-by-p matrix of baseline covarates.
 #' @param Xm  a n-by-q design matrix associated with an X main effect model; the defult is \code{NULL} and it is taken as a vector of zeros
 #' @param family  specifies the distribution of y; e.g., "gaussian", "binomial", "poisson"; can be any family supported by \code{mgcv::gam}; can also be "ordinal", for an ordinal categorical response y.
 #' @param R   the number of response categories for the case of family = "ordinal".
-#' @param bs basis type for the treatment (A) and single-index domains, respectively; the defult is "ps" (p-splines); any basis supported by \code{mgcv::gam} can be used, e.g., "cr" (cubic regression splines); see \code{mgcv::s} for detail.
-#' @param k  basis dimension for the treatment (A) and single-index domains, respectively.
+#' @param bs basis type for the treatment (A) and single-index joint effect; the defult is "ps" (p-splines); any basis supported by \code{mgcv::gam} can be used, e.g., "cr" (cubic regression splines); see \code{mgcv::s} for detail.
+#' @param k  basis dimension for the spline-type-represented treatment-specific link functions.
 #' @param sp  smoothing paramter for the treatment-specific link functions; if \code{NULL}, then estimated from the data.
 #' @param linear.link  if \code{TRUE}, the link function is restricted to be linear.
 #' @param method  the smoothing parameter estimation method; "GCV.Cp" to use GCV for unknown scale parameter and Mallows' Cp/UBRE/AIC for known scale; any method supported by \code{mgcv::gam} can be used.
 #' @param gamma  increase this beyond 1 to produce smoother models. \code{gamma} multiplies the effective degrees of freedom in the GCV or UBRE/AIC (see \code{mgcv::gam} for detail); the default is 1.
+#' @param aug a n-by-1 additional augmentation vector associated with the X main effect; the default is \code{NULL} and it is taken as a vector of zeros
+#' @param rho    a tuning parameter associated with the additional augmentation vector \code{aug}; the default is 0.
 #' @param beta.ini  an initial value for \code{beta.coef}; a p-by-1 vector; the defult is \code{NULL}, in which case a linear model estimate is used.
 #' @param ind.to.be.positive  for identifiability of the solution \code{beta.coef}, the user can restrict the jth (e.g., j=1) component of \code{beta.coef} to be positive; by default, we match the "overall" sign of \code{beta.coef} with that of the linear estimate (i.e., the initial estimate), by restricting the inner product between the two to be positive.
+#' @param scale.si.01 if \code{TRUE}, re-scale the index coefficients to restrict the index to the interval [0,1]; in such a case, an intercept term is induced.
 #' @param max.iter  an integer specifying the maximum number of iterations for \code{beta.coef} update.
 #' @param eps.iter a value specifying the convergence criterion of algorithm.
 #' @param trace.iter if \code{TRUE}, trace the estimation process and print the differences in \code{beta.coef}.
 #' @param pen.order 0 indicates the ridge penalty; 1 indicates the 1st difference penalty; 2 indicates the 2nd difference penalty, used in a penalized least squares (LS) estimation of \code{beta.coef}.
-#' @param lambda  a regularization parameter associated with the penalized LS for \code{beta.coef} update.
+#' @param lambda  a regularization parameter associated with the penalized LS for \code{beta.coef} update; the default is 0, and the index coefficients are not penalized.
 #' @param center.X   if \code{TRUE}, center X to have zero mean.
 #' @param scale.X    if \code{TRUE}, scale X to have unit variance.
 #' @param ortho.constr  separates the interaction effects from the main effect (without this, the interaction effect can be confounded by the main effect; the default is \code{TRUE}.
 #' @param si.main.effect  if \code{TRUE}, once the convergence in the estimates of \code{beta.coef} is reached, include the main effect associated with the fitted single-index (beta.coef'X) to the final fit; the default is \code{FALSE}.
 #' @param random.effect  if \code{TRUE}, as part of the main effects, the user can incorporate z-specific random intercepts.
 #' @param z  a factor that specifies the random intercepts when \code{random.effect = TRUE}.
+#' @param plots if \code{TRUE}, produce a plot for the estimated effect contrast (for binary treatment cases) (on a linear predictor scale).
 #' @param bootstrap if \code{TRUE}, compute bootstrap confidence intervals for the single-index coefficients, \code{beta.coef}; the default is \code{FALSE}.
 #' @param boot.conf  a value specifying the confidence level of the bootstrap confidence intervals; the defult is \code{boot.conf = 0.95}.
 #' @param nboot  when \code{bootstrap=TRUE}, a value specifying the number of bootstrap replications.
@@ -45,7 +49,7 @@
 #'  \item{beta.coef}{ the estimated single-index coefficients.} \item{g.fit}{a \code{mgcv:gam} object containing information about the estimated treatment-specific link functions.} \item{beta.ini}{the initial value used in the estimation of \code{beta.coef}} \item{beta.path}{solution path of \code{beta.coef} over the iterations} \item{d.beta}{records the change in \code{beta.coef} over the solution path, \code{beta.path}} \item{scale.X}{sd of pretreatment covariates X} \item{center.X}{mean of pretreatment covariates X} \item{L}{number of different treatment options} \item{p}{number of pretreatment covariates X} \item{n}{number of subjects} \item{boot.ci}{(1-boot.alpha/2) percentile bootstrap CIs (LB, UB) associated with \code{beta.coef}}
 #'
 #' @author Park, Petkova, Tarpey, Ogden
-#' @import mgcv stats
+#' @import mgcv stats graphics
 #' @seealso \code{pred.simml},  \code{fit.simml}
 #' @export
 #'
@@ -124,14 +128,14 @@
 #'   l_ciLine(mul = 5, colour = "blue", linetype = 2) +
 #'   l_points(shape = 19, size = 1, alpha = 0.1) +
 #'   xlab(expression(paste("z = ", alpha*minute, "x")))  +  ylab("y") +
-#'   ggtitle("Treatment group 1 (Tr =1)") +  theme_classic()
+#'   ggtitle("Treatment group 1 (Trt =1)") +  theme_classic()
 #'
 #' plot2 <- plot( sm(g.fit,2) )   # for treatment group 2
 #' plot2 + l_fitLine(colour = "red") + l_rug(mapping = aes(x=x, y=y), alpha = 0.8) +
 #'   l_ciLine(mul = 5, colour = "blue", linetype = 2) +
 #'   l_points(shape = 19, size = 1, alpha = 0.1) +
 #'   xlab(expression(paste("z = ", alpha*minute, "x"))) +ylab("y") +
-#'   ggtitle("Treatment group 2 (Tr =2)") + theme_classic()
+#'   ggtitle("Treatment group 2 (Trt =2)") + theme_classic()
 #'
 #'
 #' trans = function(x) x + g.fit$coefficients[2]
@@ -147,18 +151,18 @@
 #' #library(ggplot2)
 #' dat  <- data.frame(y= simml.obj1$g.fit$model$y,
 #'                    x= simml.obj1$g.fit$model$single.index,
-#'                    Treatment= simml.obj1$g.fit$model$Tr)
+#'                    Treatment= simml.obj1$g.fit$model$A)
 #' g.plot<- ggplot(dat, aes(x=x,y=y,color=Treatment,shape=Treatment,linetype=Treatment))+
 #'    geom_point(aes(color=Treatment, shape=Treatment), size=1, fill="white") +
-#'    scale_colour_brewer(palette="Set1", direction=-1) + theme_classic() +
-#'    xlab(expression(paste(alpha*minute,"x"))) + ylab("y")
+#'    scale_colour_brewer(palette="Set1", direction=-1) +
+#'    xlab(expression(paste(beta*minute,"x"))) + ylab("y")
 #' g.plot + geom_smooth(method=gam, formula= y~ s(x, bs=simml.obj1$bs, k=simml.obj1$k),
 #'                      se=TRUE, fullrange=TRUE, alpha = 0.35)
 #'}
 #'
 #'\donttest{
 #' # can obtain bootstrap CIs for beta.coef.
-#' simml.obj <- simml(y,Tr,X,Xm=X, family=family,bootstrap=TRUE,nboot=15)  #nboot=500.
+#' simml.obj <- simml(y,A,X,Xm=X, family=family,bootstrap=TRUE,nboot=15)  #nboot=500.
 #' simml.obj$beta.coef
 #' round(simml.obj$boot.ci,3)
 #'
@@ -169,7 +173,7 @@
 #'
 #'# an application to data with ordinal categorical response
 #'dat <- ordinal.data(n=500, p=5, R = 11,  # 11 response levels
-#'                    s = "nonlinear",   # nonlinear interactions
+#'                    s = "nonlinear",     # nonlinear interactions
 #'                    delta = 1)
 #'dat$SNR
 #'y <- dat$y  # ordinal response
@@ -177,19 +181,20 @@
 #'A <- dat$A  # treatment
 #'dat$true.beta  # the "true" single-index coefficient
 #'
+#'\donttest{
 #'# 1) fit a cumulative logit simml, with a flexible link function
 #'res <-  simml(y,A,X, family="ordinal", R=11)
 #'res$beta.coef  # single-index coefficients.
 #'res$g.fit$family$getTheta(TRUE)  # the estimated R-1 threshold values.
-#'
+#'}
 #'# 2) fit a cumulative logit simml, with a linear link function
 #'res2 <-  simml(y,A,X, family="ordinal", R=11, linear.link = TRUE)
 #'res2$beta.coef  # single-index coefficients.
 #'
 #'\donttest{
-#'family = ocat(R=11)  # ocat: ordered categorical response family, with R categories.
+#'family = mgcv::ocat(R=11)  # ocat: ordered categorical response family, with R categories.
 #'# the treatment A's effect.
-#'tmp <- mgcv::gam(y ~ A, family = family)
+#'tmp <- mgcv::gam(y ~ A, family =family)
 #'exp(coef(tmp)[2])  #odds ratio (OR) comparing treatment A=2 vs. A=1.
 #'
 #'ind2 <- pred.simml(res)$trt.rule ==2  # subgroup recommended with A=2 under SIMML ITR
@@ -203,7 +208,8 @@
 simml <- function(y,   # a n x 1 vector of observed responses; if family = "ordinal", the observed categories should be numerically coded: 1, 2, 3, ... up to the number of categories.
                   A,   # a n x 1 vector of observed discrete treatments; either numeric or factor.
                   X,   # a n x p matrix of covariates.
-                  Xm = NULL,  # a n-by-q design matrix assocaited with the X main effect.
+                  Xm = NULL,  # a n-by-q design matrix associated with the X main effect.
+                  aug= NULL,
                   family = "gaussian",  # specifies the distribution of y; e.g., "gaussian", "binomial", "poisson"; can be any family supported by \code{mgcv::gam}; can also be "ordinal" for ordinal catagorical response.
                   R = NULL,    # the number of catergories in the ordinal response y; only needed for the case family = "ordinal".
                   bs = "cr",   # this specifies basis for the treatment-specific link functions; the default is "ps" (p-splines); any basis supported by \code{mgcv::gam} can be used, e.g., "cr" (cubic regression splines).
@@ -212,8 +218,10 @@ simml <- function(y,   # a n x 1 vector of observed responses; if family = "ordi
                   linear.link = FALSE,
                   method = "GCV.Cp", # the smoothing parameter estimation method; can be "REML" and "ML"; see mgcv::gam for detail.
                   gamma = 1,   # increase this beyond 1 to produce smoother models; gamma multiplies the effective degrees of freedom in the GCV or UBRE/AIC; see mgcv::gam for details.
+                  rho= 0,
                   beta.ini=NULL,  # an initial value for beta.coef; a p-by-1 vector; the defult is NULL.
                   ind.to.be.positive = NULL, # for identifiability of the solution beta.coef, we restrict the jth component of beta.coef to be positive; by default j=1.
+                  scale.si.01 = FALSE,
                   max.iter = 20,  # an integer specifying the maximum number of iterations for \code{beta.coef} update.
                   eps.iter = 0.01,   # a value specifying the convergence criterion of algorithm.
                   trace.iter = TRUE,
@@ -224,31 +232,40 @@ simml <- function(y,   # a n x 1 vector of observed responses; if family = "ordi
                   ortho.constr = TRUE,
                   si.main.effect = FALSE,
                   random.effect = FALSE,
-                  z = NULL,
+                  z = NULL, plots = FALSE,
                   bootstrap = FALSE, nboot = 200, boot.conf = 0.95, seed = 1357)   # these are for bootstrap confidnce intervals.
 {
   
-  simml.obj <- fit.simml(y=y,A=A,X=X, Xm=Xm, family=family, R=R, bs=bs, k=k, sp=sp,
+  simml.obj <- fit.simml(y=y,A=A,X=X, Xm=Xm, aug=aug, rho=rho,
+                         family=family, R=R, bs=bs, k=k, sp=sp,
                          linear.link=linear.link, method=method, max.iter=max.iter,
-                         eps.iter=eps.iter,lambda=lambda, ind.to.be.positive = ind.to.be.positive, center.X= center.X, scale.X= scale.X,
+                         eps.iter=eps.iter,lambda=lambda, ind.to.be.positive = ind.to.be.positive,
+                         scale.si.01=scale.si.01, center.X= center.X, scale.X= scale.X,
                          ortho.constr = ortho.constr, si.main.effect=si.main.effect,
-                         random.effect=random.effect, z=z,
+                         random.effect=random.effect, z=z, plots = plots,
                          beta.ini=beta.ini, trace.iter=trace.iter, pen.order=pen.order)
   
   boot.mat = boot.ci <- NULL
   if(bootstrap){
     set.seed(seed)
     indices <- 1:simml.obj$n
-    if(is.null(Xm)) Xm <- as.matrix(rep(0,simml.obj$n))
+    if(is.null(Xm)) Xm <- rep(0,simml.obj$n)
+    Xm <- as.matrix(Xm)
     if(is.null(z))  z <-  rep(0,simml.obj$n)
-    boot.mat <- matrix(0, nboot, simml.obj$p)
+    if(is.null(aug))  aug <-  rep(0,simml.obj$n)
+    if(simml.obj$scale.si.01){
+      boot.mat <- matrix(0, nboot, simml.obj$p+1)
+    }else{
+      boot.mat <- matrix(0, nboot, simml.obj$p)
+    }
+    
     for(i in 1:nboot){
       boot.indices <- sample(indices, simml.obj$n, replace = TRUE)
       boot.beta  <- fit.simml(y=y[boot.indices], A = A[boot.indices], X = X[boot.indices,],
-                              Xm = Xm[boot.indices,],
+                              Xm = Xm[boot.indices,], aug = aug[boot.indices], rho =rho,
                               family=family, R=R, bs =bs, k = k, sp= sp, linear.link=linear.link, method= method,
-                              beta.ini = beta.ini, random.effect= random.effect, z=z[boot.indices],
-                              ind.to.be.positive=ind.to.be.positive,
+                              beta.ini = beta.ini, random.effect= random.effect, z=z[boot.indices], plots = plots,
+                              ind.to.be.positive=ind.to.be.positive, scale.si.01=scale.si.01,
                               pen.order = pen.order, lambda = lambda, max.iter = max.iter, gamma=gamma, trace.iter=trace.iter,
                               center.X= center.X, scale.X= scale.X,  ortho.constr = ortho.constr,
                               si.main.effect= si.main.effect)$beta.coef
@@ -267,7 +284,11 @@ simml <- function(y,   # a n x 1 vector of observed responses; if family = "ordi
     
     boot.ci <- cbind(simml.obj$beta.coef, boot.ci, (boot.ci[,1] > 0 | boot.ci[,2] < 0) )
     colnames(boot.ci) <- c("coef", "LB", "UB", " ***")
-    rownames(boot.ci) <- colnames(X)
+    if(simml.obj$scale.si.01){
+      rownames(boot.ci) <- c("Int.", colnames(X))
+    }else{
+      rownames(boot.ci) <- colnames(X)
+    }
   }
   simml.obj$boot.mat <- boot.mat
   simml.obj$boot.ci <- boot.ci
@@ -301,8 +322,11 @@ simml <- function(y,   # a n x 1 vector of observed responses; if family = "ordi
 #' @param linear.link  if \code{TRUE}, the link function is restricted to be linear.
 #' @param method  the smoothing parameter estimation method; "GCV.Cp" to use GCV for unknown scale parameter and Mallows' Cp/UBRE/AIC for known scale; any method supported by \code{mgcv::gam} can be used.
 #' @param gamma  increase this beyond 1 to produce smoother models. \code{gamma} multiplies the effective degrees of freedom in the GCV or UBRE/AIC (see \code{mgcv::gam} for detail); the default is 1.
+#' @param aug a n-by-1 additional augmentation vector associated with the X main effect; the default is \code{NULL} and it is taken as a vector of zeros
+#' @param rho    a tuning parameter associated with the additional augmentation vector \code{aug}; the default is 0.
 #' @param beta.ini  an initial value for \code{beta.coef}; a p-by-1 vector; the defult is \code{NULL}, in which case a linear model estimate is used.
 #' @param ind.to.be.positive  for identifiability of the solution \code{beta.coef}, the user can restrict the jth (e.g., j=1) component of \code{beta.coef} to be positive; by default, we match the "overall" sign of \code{beta.coef} with that of the linear estimate (i.e., the initial estimate), by restricting the inner product between the two to be positive.
+#' @param scale.si.01 if \code{TRUE}, re-scale the index coefficients to restrict the index to the interval [0,1]; in such a case, an intercept term is induced.
 #' @param max.iter  an integer specifying the maximum number of iterations for \code{beta.coef} update.
 #' @param eps.iter a value specifying the convergence criterion of algorithm.
 #' @param trace.iter if \code{TRUE}, trace the estimation process and print the differences in \code{beta.coef}.
@@ -314,6 +338,7 @@ simml <- function(y,   # a n x 1 vector of observed responses; if family = "ordi
 #' @param si.main.effect  if \code{TRUE}, once the convergence in the estimates of \code{beta.coef} is reached, include the main effect associated with the fitted single-index (beta.coef'X) to the final fit; the default is \code{FALSE}.
 #' @param random.effect  if \code{TRUE}, as part of the main effects, the user can incorporate z-specific random intercepts.
 #' @param z  a factor that specifies the random intercepts when \code{random.effect = TRUE}.
+#' @param plots if \code{TRUE}, produce a plot for the estimated effect contrast (for binary treatment cases) (on a linear predictor scale).
 #'
 #' @return a list of information of the fitted SIMML including
 #'  \item{beta.coef}{ the estimated single-index coefficients.} \item{g.fit}{a \code{mgcv:gam} object containing information about the estimated treatment-specific link functions.} \item{beta.ini}{the initial value used in the estimation of \code{beta.coef}} \item{beta.path}{solution path of \code{beta.coef} over the iterations} \item{d.beta}{records the change in \code{beta.coef} over the solution path, \code{beta.path}} \item{scale.X}{sd of pretreatment covariates X} \item{center.X}{mean of pretreatment covariates X} \item{L}{number of different treatment options} \item{p}{number of pretreatment covariates X} \item{n}{number of subjects} \item{boot.ci}{(1-boot.alpha/2) percentile bootstrap CIs (LB, UB) associated with \code{beta.coef}}
@@ -327,6 +352,8 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
                       A,   # a n x 1 vector of observed discrete treatments; either numeric or factor.
                       X,   # a n x p matrix of covariates.
                       Xm = NULL,  # a n-by-q design matrix assocaited with the X main effect.
+                      aug = NULL,
+                      rho = 0,
                       family = "gaussian",  # specifies the distribution of y; e.g., "gaussian", "binomial", "poisson"; can be any family supported by \code{mgcv::gam}; can also be "ordinal" for ordinal catagorical response.
                       R = NULL,    # the number of catergories in the ordinal response y; only needed for the case family = "ordinal".
                       bs = "ps",   # this specifies basis for the treatment-specific link functions; the default is "ps" (p-splines); any basis supported by \code{mgcv::gam} can be used, e.g., "cr" (cubic regression splines).
@@ -339,6 +366,7 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
                       eps.iter = 0.01,   # a value specifying the convergence criterion of algorithm.
                       trace.iter = TRUE,
                       ind.to.be.positive = NULL, # for identifiability of the solution beta.coef, we restrict the jth component of beta.coef to be positive; by default j=1.
+                      scale.si.01 = FALSE,
                       lambda = 0,     # a regularziation parameter associated with a penalized least squares estimation of beta.coef.
                       pen.order = 0,  # 0 indicates the ridge penalty; 1 indicates the 1st difference penalty; 2 indicates the 2nd difference penalty, used in a penalized least squares estimation of beta.coef.
                       scale.X = TRUE,
@@ -347,7 +375,7 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
                       beta.ini=NULL,  # an initial value for beta.coef; a p-by-1 vector; the defult is NULL.
                       si.main.effect = FALSE,
                       random.effect = FALSE,
-                      z= NULL)
+                      z= NULL, plots=FALSE)
 {
   
   n <- length(y)
@@ -361,9 +389,19 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
   X.center <- attr(Xc, "scaled:center")
   X.scale <- attr(Xc, "scaled:scale")
   
-  ## If not provided by the user, the efficiency augmentation vector (corresponding to the X main effect) is set to be a zero vector.
-  if(is.null(Xm)) Xm <- rep(0,n)
+  ## If not provided by the user, the covariate matrix associated with the X main effect is set to be a zero matrix.
+  if(is.null(Xm)){
+    if(is.null(aug)){ Xm <- rep(0,n)}
+    else{
+      aug.scaled <- (aug - min(aug))/(max(aug)-min(aug))
+      Xm <- aug.scaled
+    }
+  }
   Xm <- as.matrix(Xm)
+  
+  ## If not provided by the user, the efficiency augmentation vector (corresponding to the X main effect) is set to be a zero vector.
+  if(is.null(aug)) aug <- rep(0,n)
+  
   
   ## special case of an ordinal categorical response
   if(family=="ordinal"){
@@ -390,10 +428,19 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
     if(beta.coef[ind.to.be.positive] < 0) beta.coef <- -1*beta.coef      # for the (sign) identifiability
   }
   single.index <- as.vector(Xc %*% beta.coef)
+  si.min <- min(single.index)
+  si.max <- max(single.index)
+  si.ran <- si.max - si.min
   
   
   ## initialize the link function
   if(linear.link){  # the heavy penalization essentially restricts the link functions to be linear.
+    
+    if(scale.si.01){
+      beta.coef <- c("Int."= -range(single.index/si.ran)[1], beta.coef/si.ran)
+      single.index <- (single.index - si.min)/si.ran   # cbind(1, Xc) %*% beta.coef
+    }
+    
     if(random.effect){
       g.fit <- gam(y~ A + Xm + s(z, bs="re")+ s(single.index, by=A, bs="cr", k=3, sp=10^6), family=family)
     }else{
@@ -401,9 +448,9 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
     }
   }else{  # note the initialization strategy: first estimate the link without penalization (sp=0); otherwise it is easy to get trapped in a local optimum in which the smooth is linear.
     if(random.effect){
-      g.fit <- gam(y~ A + Xm+ s(z, bs="re") + s(single.index, by=A, bs=bs, k=k, sp=0), family=family, gamma=gamma, method=method)
+      g.fit <- gam(y~ A + Xm+ s(z, bs="re") + s(single.index, by=A, bs=bs, k=k, sp=sp), family=family, gamma=gamma, method=method)
     }else{
-      g.fit <- gam(y~ A + Xm + s(single.index, by=A, bs=bs, k=k, sp=0), family=family, gamma=gamma, method=method)
+      g.fit <- gam(y~ A + Xm + s(single.index, by=A, bs=bs, k=k, sp=sp), family=family, gamma=gamma, method=method)
     }
   }
   if(ortho.constr){
@@ -429,7 +476,7 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
     for (it in 2:max.iter) {
       ## Update beta.coef and intercept through lsfit
       # adjusted responses, adjusted for the nonlinearity associated with the smooth
-      y.star <- residuals(g.fit, "working") + g.der*single.index
+      y.star <- residuals(g.fit, "working") + g.der*single.index - rho*aug
       X.star <- diag(g.der)%*%Xc
       nix <- rep(0, nrow(D))
       X.p <- rbind(X.star, Pen)
@@ -438,11 +485,7 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
       
       # for the identifiability
       beta.new <- beta.fit$coef[-1]/sqrt(sum(beta.fit$coef[-1]^2))
-      if(is.null(ind.to.be.positive)){
-        if(beta.ini %*%beta.new  < 0)  beta.new <- -1*beta.new
-      }else{
-        if(beta.new[ind.to.be.positive] < 0) beta.new <- -1*beta.new      # for the (sign) identifiability
-      }
+      if(beta.ini %*%beta.new  < 0)  beta.new <- -1*beta.new
       beta.path <- rbind(beta.path, beta.new)
       
       ## Check the convergence of beta
@@ -473,20 +516,80 @@ fit.simml <- function(y,   # a n x 1 vector of observed responses; if family = "
       g.der <- der.link(g.fit)
     }
     
+    si.min <- min(single.index)
+    si.max <- max(single.index)
+    si.ran <- si.max - si.min
+    if(scale.si.01){
+      beta.coef    <- c("Int."= -range(single.index/si.ran)[1], beta.coef/si.ran)
+      single.index <- (single.index - si.min)/si.ran
+      if(random.effect){
+        g.fit <- gam(y~ A + Xm+ s(z, bs="re") + s(single.index, by=A, bs=bs, k=k, sp=sp), family=family, gamma=gamma, method=method)
+      }else{
+        g.fit <- gam(y~ A + Xm + s(single.index, by=A, bs=bs, k=k, sp=sp), family=family, gamma=gamma, method=method)
+      }
+      tmp <- g.fit$coefficients
+      if(ortho.constr){
+        smooths.coef <- tmp[grep("single.index):A" ,names(tmp))]   # basis coefficients accosited with the link functions
+        B <- matrix(smooths.coef, ncol = L)
+        B <- B - apply(B, 1, function(x) stats::weighted.mean(x, w = prob.a))
+        g.fit$coefficients[grep("single.index):A" ,names(tmp))] <- as.vector(B)  # impose the orthogonality constraint on the link funcitons
+      }
+    }
+    
   }
   
-  #g.fit$family$getTheta(TRUE)
   if(si.main.effect) g.fit$coefficients <- tmp
+  AIC <- g.fit$aic + 2*ncol(X)
+  
+  if(plots & L==2){
+    A.ord <- ordered(A)
+    if(scale.si.01){
+      si.grid <- seq(0.025, 0.975,  length.out = 100)
+    }else{
+      si.grid <- seq(si.min, si.max, length.out = 100)
+    }
+    Xm.mean <- apply(Xm, 2, mean)
+    tmp <- matrix(rep(Xm.mean, each=100), 100)
+    colnames(tmp)  <- colnames(Xm)
+    if(random.effect){
+      gam.fit <- gam(y~ A.ord + s(single.index, bs=bs, k=k, sp=sp) +
+                       Xm+ s(z, bs="re")+ s(single.index, by=A.ord, bs=bs, k=k, sp=sp), family=family, method=method)
+      dat <- list(Xm = tmp, single.index=si.grid, A.ord = rep(1,length(si.grid)),
+                  z=rep(gam.fit$model$z[1], length(si.grid)))
+    }else{
+      gam.fit <- gam(y~ A.ord + s(single.index, bs=bs, k=k, sp=sp) +
+                       Xm+ s(single.index, by=A.ord, bs=bs, k=k, sp=sp), family=family, method=method)
+      dat <- list(Xm = tmp, single.index=si.grid, A.ord = rep(1,length(si.grid)), length(si.grid))
+    }
+    lp <- predict(gam.fit, newdata = dat, type = "lpmatrix")
+    coefs <- coef(gam.fit)
+    want <- grep("single.index):", colnames(lp))
+    fits <- as.vector(cbind(1.414, lp[,want]) %*% coefs[c(2,want)])
+    se.fit <- predict(gam.fit, newdata = dat, se.fit =TRUE)$se.fit
+    ci.info <- matrix(0, length(si.grid), 3)
+    ci.info[,1] <- fits
+    ci.info[,2] <- fits +  1.96*se.fit
+    ci.info[,3] <- fits -  1.96*se.fit
+    colnames(ci.info) <- c("value", "upper", "lower")
+    matplot(si.grid, ci.info[,c("value", "upper", "lower")],
+            type="l", lty=c(1,2,2), col=1,
+            ylab="Treatment effect contrast", xlab="Index")
+    rug(single.index, ticksize = 0.02, col="blue")
+    abline(0,0, col = 2, lty =2, lwd=0.8)
+  }
+  
+  
   
   list(beta.coef = round(beta.coef,4),
        beta.ini = beta.ini,
        gamma.magnitude=gamma.magnitude,
        d.beta=d.beta, beta.path=beta.path,
-       g.fit=g.fit,
+       g.fit=g.fit, gam.fit=gam.fit,
        beta.fit=beta.fit,
        X.scale=X.scale, X.center = X.center,
        y=y, A=A, X=X, Xm = Xm, single.index=single.index,
-       p=p, n=n, bs=bs, k=k, L=L, linear.link=linear.link, random.effect=random.effect)
+       p=p, n=n, bs=bs, k=k, L=L, linear.link=linear.link,
+       random.effect=random.effect, AIC=AIC, scale.si.01=scale.si.01)
 }
 
 
@@ -560,7 +663,7 @@ pred.simml  <-  function(simml.obj, newX=NULL, newA =NULL, newXm =NULL, single.i
         else{ newXm <- rep(0, nrow(newX)) }
       }
     }
-    if(ncol(newX) != simml.obj$p) stop("newX needs to be of p columns ")
+    #if(ncol(newX) != simml.obj$p) stop("newX needs to be of p columns ")
     
     if(is.null(simml.obj$X.scale)){
       if(is.null(simml.obj$X.center)){
@@ -571,6 +674,7 @@ pred.simml  <-  function(simml.obj, newX=NULL, newA =NULL, newXm =NULL, single.i
     }else{
       newX.scaled <- scale(newX, center = simml.obj$X.center, scale = simml.obj$X.scale)
     }
+    if(simml.obj$scale.si.01)  newX.scaled <- cbind(1,newX.scaled)
     single.index  <- newX.scaled %*% simml.obj$beta.coef
     
   }else{
@@ -617,7 +721,7 @@ pred.simml  <-  function(simml.obj, newX=NULL, newA =NULL, newXm =NULL, single.i
     trt.rule[i] <- A.levels[opt.trt.index[i]]
   }
   
-  if(L==2)  colnames(pred.new) <- c("Tr1", "Tr2")
+  if(L==2)  colnames(pred.new) <- c("Trt1", "Trt2")
   
   return(list(trt.rule = trt.rule, pred.new = pred.new, single.index=single.index))
 }
@@ -768,6 +872,7 @@ generate.data <- function(n = 200, # number of observations
 #' @param R  number of response levels in y
 #' @param delta  magnitude of "main" effect (i.e., "nuisance" effect) of the covariates; a large delta means a larger "nuisance" variance.
 #' @param s  type of the treatment-by-covariates interation effect ("linear" or "nonlinear")
+#' @param sigma  noise sd in the latent variable representation
 #'
 #' @return
 #' \item{y}{a n-by-1 vector of treatment outcomes.}
@@ -782,7 +887,8 @@ ordinal.data <- function(n=400,  # number of subjects
                          p=10,   # number of covariates
                          R = 11,  # number of response levels in y
                          delta = 1,  # magnitude of "main" effect (i.e., "nuisance" effect) of the covariates; a large delta means a larger "nuisance" variance.
-                         s = "nonlinear")  # type of the treatment-by-covariates interation effect
+                         s = "nonlinear", # type of the treatment-by-covariates interation effect
+                         sigma=0)
 {
   
   # generate p pretreatment scalar-valued covariates X
@@ -792,10 +898,10 @@ ordinal.data <- function(n=400,  # number of subjects
   # X main effect on y
   main.effect = rep(0, n)
   for(j in 1:p){
-    main.effect <- main.effect + sin(X[,j])
+    main.effect <- main.effect + plogis(2*X[,j])-0.5
   }
   # X-by-A interaction effect on y
-  true.beta <- c(p:1)/sqrt(sum(c(p:1)^2))   # the "true" single-index coefficient assocaited with X-by-A interaction effect.
+  true.beta <- c(c(1,-1, 0.5, -0.5), rep(0, p-4))  # the "true" single-index coefficient assocaited with X-by-A interaction effect.
   if(s=="nonlinear"){
     contrast <- 2*exp(-(X%*%true.beta-0.5)^2)-0.5   # this will specify a nonlinear interaction term
   }else{
@@ -803,7 +909,7 @@ ordinal.data <- function(n=400,  # number of subjects
   }
   interaction.effect <- (-1)^A *contrast   # X-ty-A interaction effect term.
   
-  f <- delta*main.effect + interaction.effect     # latent response.
+  f <- delta*main.effect + interaction.effect   + rnorm(n, 0, sd=sigma)  # latent response.
   f <- f - mean(f)  # center the latent response.
   
   var.main =  var(delta*main.effect)
@@ -812,7 +918,7 @@ ordinal.data <- function(n=400,  # number of subjects
   
   noise <- rlogis(n, 0, scale = 1)  # standard logistic noise
   y.star <- f + noise # latent response
-  theta  <-c(-Inf,seq(-3,3, length.out=10), Inf)  # the cut-points
+  theta  <-c(-Inf,seq(-3,3, length.out=R-1), Inf)  # the cut-points
   y <- f
   for(j in 1:R){
     y[y.star>theta[j] & y.star<=theta[j+1]] <- j
