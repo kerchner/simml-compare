@@ -4,6 +4,10 @@ This repository is a convenience to be able to compare versions 0.1.0, 0.2.0, an
 
 ## FAQs
 
+### How do I use it?
+
+Go to https://github.com/kerchner/simml-compare/commits/main/simml.main.R and look at the diffs for each version increment.
+
 ### Why was this necessary when https://github.com/cran/simml contains tags for each version?
 
 Because `simml-main.R` in version 0.1.0 was renamed `simml.main.R` in subsequent versions, but apparently _not_ using `git mv` to rename, so GitHub considers
